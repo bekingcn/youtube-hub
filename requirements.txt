@@ -1,0 +1,4 @@
+requests
+pytubefix
+tiktoken
+streamlit

@@ -293,7 +293,7 @@ def render_subtitle(video_url, lang):
         info = to_video_info(video)
         lang = info['captions'][0] if info['captions'] else lang
         st.title(video.title)
-        st.markdown(f"[{info['url']}]({info['url']})")
+        st.markdown(f"[{info['url']}]({info['url']}) - {info['length']} - {info['published']}")
         st.markdown(f"{info['description'][:128]}...", help=info['description'])
         
     # Subtitle and translation
@@ -349,7 +349,7 @@ def render_video_info_list(info_list):
         for info in info_list.get("videos", []):
             with st.container():
                 col1, col2 = st.columns([9, 1])
-                col1.markdown(f"[{info['title']}]({info['url']}) - {info['length']}")
+                col1.markdown(f"[{info['title']}]({info['url']}) - {info['length']} - {info['published']}")
                 col1.markdown(f"{info['description'][:100]}...", help=info['description'])
                 col2.button("Subtitles", key=info['id'], on_click=xset_todo, kwargs={"todo": {"video_id": info['url']}})
 

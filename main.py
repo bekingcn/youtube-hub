@@ -168,7 +168,7 @@ def to_video_info(video: YouTube):
         'thumbnail': video.thumbnail_url,
         'id': video.video_id,
         "length": float_to_srt_time_format(video.length, ms=False),
-        "captions": [] # [caption.code for caption in video.caption_tracks],
+        "captions": [caption.code for caption in video.caption_tracks],
     }
 
 def get_xml_caption(video: YouTube, lang='a.en'):
@@ -258,25 +258,70 @@ def save_to_json(info):
         jstr = json.dumps(info, ensure_ascii=False, indent=4)
         f.write(jstr)
 
+
+def download_video(video_url, pb):
+    yt = YouTube(video_url)
+    stream = yt.streams.filter(progressive=True, file_extension="mp4").first()
+    print(f"stream: {stream} | {stream.filesize} | {stream.url}")
+    def _on_progress(stream, chunk, bytes_remaining):
+        bytes_downloaded = stream.filesize - bytes_remaining
+        percent = bytes_downloaded / stream.filesize
+        percent = min(1.0, percent)
+        progress = int(100 * percent)
+        pb.progress(progress)
+    yt.register_on_progress_callback(_on_progress)
+    stream.download(output_path=DATA_FOLDER, filename=f"{yt.video_id}.mp4", skip_existing=True)
+    file_path = f"{DATA_FOLDER}/{yt.video_id}.mp4"
+    srt_path = f"{DATA_FOLDER}/{yt.video_id}.srt"
+    if not os.path.exists(srt_path):
+        srt = yt.captions.get_by_language_code(lang_code=lang).generate_srt_captions()
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt)
+    return file_path, srt_path
+
+def show_video(video: YouTube | None=None, video_id: str=None):
+    if video:
+        video_id = video.video_id
+    local_path = f"{DATA_FOLDER}/{video_id}.mp4"
+    srt_local_path = f"{DATA_FOLDER}/{video_id}.srt"
+    if not os.path.exists(local_path):
+        if video is None:
+            video = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+        srt = video.captions.get_by_language_code(lang_code=lang).generate_srt_captions()
+        stream = video.streams.filter(progressive=True, file_extension="mp4").first()
+        st.video(stream.url, subtitles=srt)
+    else:
+        st.video(local_path, subtitles=srt_local_path)
+
 def render_existing_video(info):
     # Video info
     st.title(info['title'])
     st.markdown(f"[{info['url']}]({info['url']})")
     st.markdown(f"{info['description'][:100]}...", help=info['description'])
+    col1, col2 = st.columns([1, 4])
+    download_clicked = col1.button("Download", key="download_video")
+    if download_clicked:
+        pb = col2.progress(0)
+        download_video(info['url'], pb)
+
     
     # Subtitle and translation
     col1, col2 = st.columns([1, 1])
-    col1.markdown("## Subtitle")
-    col2.markdown("## Translation")
-    with col1.container(height=300):
-        st.text(info['subtitle'])
-    with col2.container(height=300):
-        st.text("\n\n".join(info['translation']))
+    col1.subheader("Subtitle")
+    col2.subheader("Video Preview")
 
+    with col1.container(height=400):
+        st.text(info['subtitle'])
+    with col2.container(height=400):
+        show_video(video_id=info['id'])
+
+    col1, col2 = st.columns([1, 1])
+    col1.subheader("Translation")
+    col2.subheader("Subtitle Summary")
+    with col1.container(height=300):
+        st.text("\n\n".join(info['translation']))
     # Summary
-    st.markdown("\n\n---\n\n## Summary")
-    # calculate summary with the maximum of MAX_TOKENS_FOR_SUMMARY tokens
-    with st.container(height=300):
+    with col2.container(height=300):
         st.markdown(info['summary'])
     
     
@@ -294,7 +339,8 @@ def render_subtitle(video_url, lang):
         lang = info['captions'][0] if info['captions'] else lang
         st.title(video.title)
         st.markdown(f"[{info['url']}]({info['url']})")
-        st.markdown(f"{info['description'][:128]}...", help=info['description'])
+        st.markdown(f"{info['description'][:128]}...", help=info['description'])    
+    download_clicked = st.button("Download", key="download_video")
 
     # Subtitle and translation
     col1, col2 = st.columns([1, 1])
@@ -308,14 +354,15 @@ def render_subtitle(video_url, lang):
             info['subtitle'] = sub_text
     with col2.container(height=400):
         stream = video.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").first()
-        srt = video.captions[lang].xml_caption_to_srt(xml)
-        st.video(stream.url, subtitles=srt)
+        # st.text(stream.url)
+        # srt = video.captions[lang].xml_caption_to_srt(xml)
+        # st.video(stream.url, subtitles=srt)
+        show_video(video, video_id=info['id'])
                 
 
     col1, col2 = st.columns([1, 1])
     col1.subheader("Translation")
     col2.subheader("Subtitle Summary")
-    st.markdown("\n\n---\n\n## Summary")
     with col1.container(height=300):
         with st.spinner("Translating..."):
             sub_merged = merge_time_text_lines(sub_text, 2)

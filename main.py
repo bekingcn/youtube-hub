@@ -274,7 +274,7 @@ def download_video(video_url, pb):
     file_path = f"{DATA_FOLDER}/{yt.video_id}.mp4"
     srt_path = f"{DATA_FOLDER}/{yt.video_id}.srt"
     if not os.path.exists(srt_path):
-        srt = yt.captions.get_by_language_code(lang_code=lang).generate_srt_captions()
+        srt = yt.caption_tracks[0].generate_srt_captions()
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(srt)
     return file_path, srt_path
@@ -287,7 +287,7 @@ def show_video(video: YouTube | None=None, video_id: str=None):
     if not os.path.exists(local_path):
         if video is None:
             video = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        srt = video.captions.get_by_language_code(lang_code=video.caption_tracks[0].language).generate_srt_captions()
+        srt = video.caption_tracks[0].generate_srt_captions()
         stream = video.streams.filter(progressive=True, file_extension="mp4").first()
         st.video(stream.url, subtitles=srt)
     else:

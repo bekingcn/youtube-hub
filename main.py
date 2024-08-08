@@ -287,7 +287,7 @@ def show_video(video: YouTube | None=None, video_id: str=None):
     if not os.path.exists(local_path):
         if video is None:
             video = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        srt = video.captions.get_by_language_code(lang_code=lang).generate_srt_captions()
+        srt = video.captions.get_by_language_code(lang_code=video.caption_tracks[0].language).generate_srt_captions()
         stream = video.streams.filter(progressive=True, file_extension="mp4").first()
         st.video(stream.url, subtitles=srt)
     else:

@@ -311,7 +311,7 @@ def render_existing_video(info):
     col2.subheader("Video Preview")
 
     with col1.container(height=400):
-        st.text(info['subtitle'])
+        st.text(info.get('subtitle', 'No subtitle available'))
     with col2.container(height=400):
         show_video(video_id=info['id'])
 
@@ -319,10 +319,10 @@ def render_existing_video(info):
     col1.subheader("Translation")
     col2.subheader("Subtitle Summary")
     with col1.container(height=300):
-        st.text("\n\n".join(info['translation']))
+        st.text("\n\n".join(info.get('translation', ['No translation available'])))
     # Summary
     with col2.container(height=300):
-        st.markdown(info['summary'])
+        st.markdown(info.get('summary', 'No summary available'))
     
     
 def render_subtitle(video_url, lang):
@@ -354,10 +354,6 @@ def render_subtitle(video_url, lang):
             st.text(sub_text)
             info['subtitle'] = sub_text
     with col2.container(height=400):
-        stream = video.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").first()
-        # st.text(stream.url)
-        # srt = video.captions[lang].xml_caption_to_srt(xml)
-        # st.video(stream.url, subtitles=srt)
         show_video(video, video_id=info['id'])
                 
 

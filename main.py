@@ -339,8 +339,9 @@ def render_subtitle(video_url, lang):
         lang = info['captions'][0] if info['captions'] else lang
         st.title(video.title)
         st.markdown(f"[{info['url']}]({info['url']})")
-        st.markdown(f"{info['description'][:128]}...", help=info['description'])    
-    download_clicked = st.button("Download", key="download_video")
+        st.markdown(f"{info['description'][:128]}...", help=info['description'])
+    col1, col2 = st.columns([1, 4])
+    download_clicked = col1.button("Download", key="download_video")
 
     # Subtitle and translation
     col1, col2 = st.columns([1, 1])

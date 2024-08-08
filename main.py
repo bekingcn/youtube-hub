@@ -293,20 +293,30 @@ def render_subtitle(video_url, lang):
         info = to_video_info(video)
         lang = info['captions'][0] if info['captions'] else lang
         st.title(video.title)
-        st.markdown(f"[{info['url']}]({info['url']}) - {info['length']} - {info['published']}")
+        st.markdown(f"[{info['url']}]({info['url']})")
         st.markdown(f"{info['description'][:128]}...", help=info['description'])
-        
+
     # Subtitle and translation
     col1, col2 = st.columns([1, 1])
-    col1.markdown("## Subtitle")
-    col2.markdown("## Translation")
-    with col1.container(height=300):
+    col1.subheader("Subtitle")
+    col2.subheader("Video Preview")
+    with col1.container(height=400):
         with st.spinner("Captions..."):
             xml = get_xml_caption(video, lang)
             sub_text = xml_caption_to_time_text(xml)
             st.text(sub_text)
             info['subtitle'] = sub_text
-    with col2.container(height=300):
+    with col2.container(height=400):
+        stream = video.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").first()
+        srt = video.captions[lang].xml_caption_to_srt(xml)
+        st.video(stream.url, subtitles=srt)
+                
+
+    col1, col2 = st.columns([1, 1])
+    col1.subheader("Translation")
+    col2.subheader("Subtitle Summary")
+    st.markdown("\n\n---\n\n## Summary")
+    with col1.container(height=300):
         with st.spinner("Translating..."):
             sub_merged = merge_time_text_lines(sub_text, 2)
             tran_texts = translate_stream(sub_merged) # ["No translation"] # 
@@ -315,13 +325,10 @@ def render_subtitle(video_url, lang):
                 st.text(tran)
                 tran_list.append(tran)
             info['translation'] = tran_list
-                
-
     # Summary
-    st.markdown("\n\n---\n\n## Summary")
-    # calculate summary with the maximum of MAX_TOKENS_FOR_SUMMARY tokens
-    with st.container(height=300):
+    with col2.container(height=300):
         with st.spinner("Summarizing..."):
+            # calculate summary with the maximum of MAX_TOKENS_FOR_SUMMARY tokens
             sub_text, total = split_large_text(sub_text, MAX_TOKENS_FOR_SUMMARY)
             if api_key:
                 chunks = []
@@ -337,6 +344,7 @@ def render_subtitle(video_url, lang):
                 st.markdown(summary)
             if total > MAX_TOKENS_FOR_SUMMARY:
                 st.warning(f"Subtitle too long ({total} tokens). Only the first {MAX_TOKENS_FOR_SUMMARY} tokens will be used for summary.")
+
     st.session_state["current_video"] = info
     return info, True
 

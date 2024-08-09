@@ -155,7 +155,7 @@ def to_video_info(video: YouTube):
     return {
         'title': video.title,
         'url': video.watch_url,
-        'published': video.publish_date.strftime("%Y-%m-%d %H:%M:%S"),
+        'published': video.publish_date.strftime("%Y-%m-%d %H:%M:%S") if video.publish_date else None,
         'description': video.description,
         'thumbnail': video.thumbnail_url,
         'id': video.video_id,
@@ -164,7 +164,11 @@ def to_video_info(video: YouTube):
     }
 
 def get_xml_caption(video: YouTube, lang: str):
-    return video.captions[lang].xml_captions
+    # TODO: why the captions are empty locally?
+    c = video.captions.get_by_language_code(lang)
+    if c:
+        return c.xml_captions
+    return None
 
 def get_channel(channel_id):
     channel = Channel(channel_id)
@@ -284,7 +288,7 @@ def show_video(video: YouTube | None=None, video_id: str=None):
     if not os.path.exists(local_path):
         if video is None:
             video = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        srt = video.caption_tracks[0].generate_srt_captions()
+        srt = video.caption_tracks[0].generate_srt_captions() if video.caption_tracks else None
         stream = video.streams.filter(progressive=True, file_extension="mp4").first()
         st.video(stream.url, subtitles=srt)
     else:
@@ -331,10 +335,12 @@ def render_subtitle(video_url, lang):
     
     # Video info
     with st.spinner("Loading video..."):
-        video = YouTube(video_url)
+        video = YouTube(video_url) # , use_oauth=True, allow_oauth_cache=True) # auth for local
         info = to_video_info(video)
+        st.session_state["current_video"] = info
         lang = info['captions'][0] if info['captions'] else lang
-        st.title(video.title + f" ({lang})")
+        print(info)
+        st.title(video.title)
         st.markdown(f"[{info['url']}]({info['url']})")
         st.markdown(f"{info['description'][:128]}...", help=info['description'])
     col1, col2 = st.columns([1, 4])
@@ -346,12 +352,15 @@ def render_subtitle(video_url, lang):
     col2.subheader("Video Preview")
     with col1.container(height=400):
         with st.spinner("Captions..."):
+            # TODO: no caption available for this video
             xml = get_xml_caption(video, lang)
-            sub_text = xml_caption_to_time_text(xml)
-            st.text(sub_text)
+            sub_text = xml_caption_to_time_text(xml) if xml else ""
+            st.text(sub_text if sub_text else "No subtitle available")
             info['subtitle'] = sub_text
     with col2.container(height=400):
         show_video(video, video_id=info['id'])
+    if not xml:
+        return info, True
                 
 
     col1, col2 = st.columns([1, 1])
@@ -359,9 +368,9 @@ def render_subtitle(video_url, lang):
     col2.subheader("Subtitle Summary")
     with col1.container(height=300):
         with st.spinner("Translating..."):
+            tran_list = []
             sub_merged = merge_time_text_lines(sub_text, 2)
             tran_texts = translate_stream(sub_merged) # ["No translation"] # 
-            tran_list = []
             for tran in tran_texts:
                 st.text(tran)
                 tran_list.append(tran)
@@ -386,7 +395,6 @@ def render_subtitle(video_url, lang):
             if total > MAX_TOKENS_FOR_SUMMARY:
                 st.warning(f"Subtitle too long ({total} tokens). Only the first {MAX_TOKENS_FOR_SUMMARY} tokens will be used for summary.")
 
-    st.session_state["current_video"] = info
     return info, True
 
 def render_video_info_list(info_list):
@@ -398,7 +406,7 @@ def render_video_info_list(info_list):
         for info in info_list.get("videos", []):
             with st.container():
                 col1, col2 = st.columns([9, 1])
-                col1.markdown(f"[{info['title']}]({info['url']}) - {info['length']} - {info['published']}")
+                col1.markdown(f"**[{info['title']}]({info['url']}) - {info['length']} - {info['published']}**")
                 col1.markdown(f"{info['description'][:100]}...", help=info['description'])
                 col2.button("Subtitles", key=info['id'], on_click=xset_todo, kwargs={"todo": {"video_id": info['url']}})
 

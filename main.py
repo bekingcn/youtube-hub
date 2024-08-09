@@ -36,6 +36,7 @@ MY_CHANNELS = [c for c in st.secrets.get("MY_CHANNELS", "").split(";") if c.stri
 DEFAULT_MODEL_LIST = [m for m in st.secrets.get("GROQ_MODEL_LIST", "llama-3.1-8b-instant").split(";") if m.strip()]
 DEFAULT_MODEL = "llama-3.1-8b-instant"
 DEFAULT_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+
 def summarize_stream(video_texts: str | list, api_key: str, model: str = DEFAULT_MODEL):
     from groq import Groq
 
@@ -86,15 +87,6 @@ def translate_stream(text: str | list[str]):
 
 def translate(text: str) -> str:
     return "\n".join(translate_stream(text))
-
-
-# get subtitle by video url and language
-def get_subtitles(video_url, lang, video=None):
-    if video is None:
-        yt = YouTube(video_url)
-    else:
-        yt = video
-    return yt.captions[lang].generate_srt_captions()
 
 def float_to_srt_time_format(d: float, ms: bool = True) -> str:
     """Convert decimal durations into proper srt format.
@@ -171,7 +163,7 @@ def to_video_info(video: YouTube):
         "captions": [caption.code for caption in video.caption_tracks],
     }
 
-def get_xml_caption(video: YouTube, lang='a.en'):
+def get_xml_caption(video: YouTube, lang: str):
     return video.captions[lang].xml_captions
 
 def get_channel(channel_id):
@@ -261,7 +253,12 @@ def save_to_json(info):
 
 def download_video(video_url, pb):
     yt = YouTube(video_url)
-    stream = yt.streams.filter(progressive=True, file_extension="mp4").first()
+    # we prefer 720p, 480p or 360p
+    preferred_resolutions = ["720p", "480p", "360p"]
+    defult_stream = yt.streams.filter(progressive=True, file_extension="mp4").first()
+    stream = yt.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[0]) \
+        or yt.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[1]) \
+        or defult_stream
     print(f"stream: {stream} | {stream.filesize} | {stream.url}")
     def _on_progress(stream, chunk, bytes_remaining):
         bytes_downloaded = stream.filesize - bytes_remaining
@@ -337,7 +334,7 @@ def render_subtitle(video_url, lang):
         video = YouTube(video_url)
         info = to_video_info(video)
         lang = info['captions'][0] if info['captions'] else lang
-        st.title(video.title)
+        st.title(video.title + f" ({lang})")
         st.markdown(f"[{info['url']}]({info['url']})")
         st.markdown(f"{info['description'][:128]}...", help=info['description'])
     col1, col2 = st.columns([1, 4])

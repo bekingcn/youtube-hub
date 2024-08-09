@@ -228,7 +228,7 @@ def xset_todo(todo: dict):
         elif todo["channel_id"] == "my":
             my_channel = st.session_state.my_channels
             if my_channel:
-                st.session_state.todo = {"channel_id": f"https://www.youtube.com/@{my_channel}/videos"}
+                st.session_state.todo = {"channel_id": f"https://www.youtube.com/@{my_channel}"}
             else:
                 print("No channel_id found. Please set it in the settings")
         else:
@@ -254,15 +254,18 @@ def save_to_json(info):
         jstr = json.dumps(info, ensure_ascii=False, indent=4)
         f.write(jstr)
 
-
-def download_video(video_url, pb):
-    yt = YouTube(video_url)
+def preferred_resolution(video: YouTube):
     # we prefer 720p, 480p or 360p
     preferred_resolutions = ["720p", "480p", "360p"]
-    defult_stream = yt.streams.filter(progressive=True, file_extension="mp4").first()
-    stream = yt.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[0]) \
-        or yt.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[1]) \
+    defult_stream = video.streams.filter(progressive=True, file_extension="mp4").first()
+    stream = video.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[0]) \
+        or video.streams.filter(progressive=True, file_extension="mp4").get_by_resolution(preferred_resolutions[1]) \
         or defult_stream
+    return stream
+
+def download_video(video_url, pb):
+    video = YouTube(video_url)
+    stream = preferred_resolution(video)
     print(f"stream: {stream} | {stream.filesize} | {stream.url}")
     def _on_progress(stream, chunk, bytes_remaining):
         bytes_downloaded = stream.filesize - bytes_remaining
@@ -270,12 +273,12 @@ def download_video(video_url, pb):
         percent = min(1.0, percent)
         progress = int(100 * percent)
         pb.progress(progress)
-    yt.register_on_progress_callback(_on_progress)
-    stream.download(output_path=DATA_FOLDER, filename=f"{yt.video_id}.mp4", skip_existing=True)
-    file_path = f"{DATA_FOLDER}/{yt.video_id}.mp4"
-    srt_path = f"{DATA_FOLDER}/{yt.video_id}.srt"
+    video.register_on_progress_callback(_on_progress)
+    stream.download(output_path=DATA_FOLDER, filename=f"{video.video_id}.mp4", skip_existing=True)
+    file_path = f"{DATA_FOLDER}/{video.video_id}.mp4"
+    srt_path = f"{DATA_FOLDER}/{video.video_id}.srt"
     if not os.path.exists(srt_path):
-        srt = yt.caption_tracks[0].generate_srt_captions()
+        srt = video.caption_tracks[0].generate_srt_captions()
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(srt)
     return file_path, srt_path
@@ -289,7 +292,7 @@ def show_video(video: YouTube | None=None, video_id: str=None):
         if video is None:
             video = YouTube(f"https://www.youtube.com/watch?v={video_id}")
         srt = video.caption_tracks[0].generate_srt_captions() if video.caption_tracks else None
-        stream = video.streams.filter(progressive=True, file_extension="mp4").first()
+        stream = preferred_resolution(video)
         st.video(stream.url, subtitles=srt)
     else:
         st.video(local_path, subtitles=srt_local_path)
@@ -398,7 +401,6 @@ def render_subtitle(video_url, lang):
     return info, True
 
 def render_video_info_list(info_list):
-    # st.dataframe(info_list)
     # display the videos in a table, add a button to download the subtitles
     if info_list:
         title = info_list.get("channel", "") or info_list.get("query", "")

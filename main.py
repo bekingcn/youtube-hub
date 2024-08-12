@@ -1,6 +1,7 @@
 
 from html import unescape
 import math, os, time
+import re
 from xml.etree import ElementTree
 import requests
 from pytubefix import Channel, YouTube, Caption
@@ -133,9 +134,8 @@ def xml_caption_to_time_text(xml_captions: str, merge_lines: int = 1) -> str:
         time_text, caption = segments[i]
         for j in range(i + 1, min(total_len, i + merge_lines)):
             caption += " " + segments[j][1]
-        texts.append(f"[{time_text}] {caption}")
-
-    return "\n".join(texts).strip()
+        texts.append((time_text, caption))
+    return texts
 
 def merge_time_text_lines(time_text: str, merge_lines: int) -> str:
     lines = time_text.split("\n")
@@ -164,11 +164,11 @@ def to_video_info(video: YouTube):
     }
 
 def get_xml_caption(video: YouTube, lang: str):
-    # TODO: why the captions are empty locally?
     c = video.captions.get_by_language_code(lang)
     if c:
-        return c.xml_captions
-    return None
+        xml = c.xml_captions
+        return xml, c.xml_caption_to_srt(xml)
+    return None, None
 
 def get_channel(channel_id):
     channel = Channel(channel_id)
@@ -242,7 +242,7 @@ def xset_todo(todo: dict):
 def get_todo():
     return st.session_state.get("todo", {})
 
-def save_to_json(info):
+def save_to_json(info, srt=None):
     import json
     folder = DATA_FOLDER
     # create folder if not exists
@@ -253,6 +253,10 @@ def save_to_json(info):
     with open(f"{folder}/{info['id']}.json", "w", encoding="utf-8") as f:
         jstr = json.dumps(info, ensure_ascii=False, indent=4)
         f.write(jstr)
+    if srt:
+        with open(f"{folder}/{info['id']}.srt", "w", encoding="utf-8") as f:
+            f.write(srt)
+
 
 def preferred_resolution(video: YouTube):
     # we prefer 720p, 480p or 360p
@@ -266,15 +270,17 @@ def preferred_resolution(video: YouTube):
 def download_video(video_url, pb):
     video = YouTube(video_url)
     stream = preferred_resolution(video)
-    print(f"stream: {stream} | {stream.filesize} | {stream.url}")
+    title = f"{video.title} ({stream.resolution})"
+    pb.progress(0, text=title)
     def _on_progress(stream, chunk, bytes_remaining):
         bytes_downloaded = stream.filesize - bytes_remaining
         percent = bytes_downloaded / stream.filesize
         percent = min(1.0, percent)
         progress = int(100 * percent)
-        pb.progress(progress)
+        pb.progress(progress, text=title)
     video.register_on_progress_callback(_on_progress)
     stream.download(output_path=DATA_FOLDER, filename=f"{video.video_id}.mp4", skip_existing=True)
+    pb.progress(100, text=title)
     file_path = f"{DATA_FOLDER}/{video.video_id}.mp4"
     srt_path = f"{DATA_FOLDER}/{video.video_id}.srt"
     if not os.path.exists(srt_path):
@@ -303,9 +309,9 @@ def render_existing_video(info):
     st.markdown(f"[{info['url']}]({info['url']})")
     st.markdown(f"{info['description'][:100]}...", help=info['description'])
     col1, col2 = st.columns([1, 4])
-    download_clicked = col1.button("Download", key="download_video")
+    download_clicked = col1.button("Fetch to Local", key="fetch_local")
     if download_clicked:
-        pb = col2.progress(0)
+        pb = col2.progress(0, text=info['title'])
         download_video(info['url'], pb)
 
     
@@ -321,7 +327,7 @@ def render_existing_video(info):
 
     col1, col2 = st.columns([1, 1])
     col1.subheader("Translation")
-    col2.subheader("Subtitle Summary")
+    col2.subheader("Summary")
     with col1.container(height=300):
         st.text("\n\n".join(info.get('translation', ['No translation available'])))
     # Summary
@@ -347,7 +353,7 @@ def render_subtitle(video_url, lang):
         st.markdown(f"[{info['url']}]({info['url']})")
         st.markdown(f"{info['description'][:128]}...", help=info['description'])
     col1, col2 = st.columns([1, 4])
-    download_clicked = col1.button("Download", key="download_video")
+    download_clicked = col1.button("Fetch to Local", key="fetch_local")
 
     # Subtitle and translation
     col1, col2 = st.columns([1, 1])
@@ -356,8 +362,9 @@ def render_subtitle(video_url, lang):
     with col1.container(height=400):
         with st.spinner("Captions..."):
             # TODO: no caption available for this video
-            xml = get_xml_caption(video, lang)
-            sub_text = xml_caption_to_time_text(xml) if xml else ""
+            xml, srt = get_xml_caption(video, lang)
+            texts = xml_caption_to_time_text(xml) if xml else []
+            sub_text =  "\n".join([f"[{t[0]}] {t[1]}" for t in texts]).strip()
             st.text(sub_text if sub_text else "No subtitle available")
             info['subtitle'] = sub_text
     with col2.container(height=400):
@@ -368,11 +375,15 @@ def render_subtitle(video_url, lang):
 
     col1, col2 = st.columns([1, 1])
     col1.subheader("Translation")
-    col2.subheader("Subtitle Summary")
+    col2.subheader("Summary")
+    merge_lines = 2
     with col1.container(height=300):
         with st.spinner("Translating..."):
             tran_list = []
-            sub_merged = merge_time_text_lines(sub_text, 2)
+            merged_texts = [
+                (texts[i][0], " ".join([t[1] for t in texts[i:i+merge_lines]])) for i in range(0, len(texts), merge_lines)
+            ]
+            sub_merged =  "\n".join([f"[{t[0]}] {t[1]}" for t in merged_texts]).strip()
             tran_texts = translate_stream(sub_merged) # ["No translation"] # 
             for tran in tran_texts:
                 st.text(tran)
@@ -398,13 +409,14 @@ def render_subtitle(video_url, lang):
             if total > MAX_TOKENS_FOR_SUMMARY:
                 st.warning(f"Subtitle too long ({total} tokens). Only the first {MAX_TOKENS_FOR_SUMMARY} tokens will be used for summary.")
 
-    return info, True
+    return info, srt, True
 
 def render_video_info_list(info_list):
     # display the videos in a table, add a button to download the subtitles
     if info_list:
         title = info_list.get("channel", "") or info_list.get("query", "")
-        st.markdown(f"\n\n---\n\n## Videos [{title}]")
+        st.divider()
+        st.markdown(f"## Videos [{title}]")
         for info in info_list.get("videos", []):
             with st.container():
                 col1, col2 = st.columns([9, 1])
@@ -442,11 +454,9 @@ if __name__ == "__main__":
     xset_todo({})
     info_list = st.session_state.get("info_list", [])
     if video_id:
-        info, is_new = render_subtitle(video_id, lang)
+        info, srt, is_new = render_subtitle(video_id, lang)
         if is_new:
-            save_to_json(info)
-        # download the json
-        st.download_button("Download JSON", data=open(f"{DATA_FOLDER}/{info['id']}.json", "rb").read(), file_name=f"{info['id']}.json")
+            save_to_json(info, srt)
     elif channel_id:
         with st.spinner("Loading Channel..."):
             info_list = get_channel(channel_id)
@@ -455,13 +465,21 @@ if __name__ == "__main__":
         with st.spinner("Searching..."):
             info_list = search(query)
         st.session_state["info_list"] = info_list
-    else:
-        info = st.session_state.get("current_video", None)
-        if info:
-            render_existing_video(info)
-            # download the json if it exists
-            if os.path.exists(f"{DATA_FOLDER}/{info['id']}.json"):
-                st.download_button("Download JSON", data=open(f"{DATA_FOLDER}/{info['id']}.json", "rb").read(), file_name=f"{info['id']}.json")
+    
+    info = st.session_state.get("current_video", None)
+    # show video if nor from channel or search
+    if info and not channel_id and not query:
+        file_name = info['id'] + "_" + re.sub(r"[^a-zA-Z0-9_]", "_", info["title"].lower().replace(" ", "_"))
+        file_name = file_name[:64]
+        render_existing_video(info)
+        col1, col2, col3, _ = st.columns([1,1,1,2])
+        # download the json if it exists
+        if os.path.exists(f"{DATA_FOLDER}/{info['id']}.json"):
+            col1.download_button("Download JSON", data=open(f"{DATA_FOLDER}/{info['id']}.json", "rb").read(), file_name=f"{file_name}.json")
+        if os.path.exists(f"{DATA_FOLDER}/{info['id']}.srt"):
+            col2.download_button("Download Srt", data=open(f"{DATA_FOLDER}/{info['id']}.srt", "rb").read(), file_name=f"{file_name}.srt")
+        if os.path.exists(f"{DATA_FOLDER}/{info['id']}.mp4"):
+            col3.download_button("Download Video", data=open(f"{DATA_FOLDER}/{info['id']}.mp4", "rb").read(), file_name=f"{file_name}.mp4")
     render_video_info_list(info_list)
 
 

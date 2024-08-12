@@ -340,13 +340,12 @@ def render_subtitle(video_url, lang):
     info = st.session_state.get("current_video", {})
     if info and info['url'] == video_url:
         render_existing_video(info)
-        return info, False
+        return info, "", False
     
     # Video info
     with st.spinner("Loading video..."):
         video = YouTube(video_url) # , use_oauth=True, allow_oauth_cache=True) # auth for local
         info = to_video_info(video)
-        st.session_state["current_video"] = info
         lang = info['captions'][0] if info['captions'] else lang
         print(info)
         st.title(video.title)
@@ -370,7 +369,7 @@ def render_subtitle(video_url, lang):
     with col2.container(height=400):
         show_video(video, video_id=info['id'])
     if not xml:
-        return info, True
+        return info, "", True
                 
 
     col1, col2 = st.columns([1, 1])
@@ -436,6 +435,7 @@ if __name__ == "__main__":
     query = todo.get("query", None)
 
     # list the videos from a input channel
+    st.sidebar.title("Youtube Hub")
     st.sidebar.subheader("Channel id")
     st.sidebar.chat_input(key="channel_id", placeholder=channel_id or "Channel id", max_chars=80, on_submit=xset_todo, kwargs={"todo": {"channel_id": ""}})
     st.sidebar.subheader("Video id")
@@ -457,6 +457,7 @@ if __name__ == "__main__":
         info, srt, is_new = render_subtitle(video_id, lang)
         if is_new:
             save_to_json(info, srt)
+        st.session_state["current_video"] = info
     elif channel_id:
         with st.spinner("Loading Channel..."):
             info_list = get_channel(channel_id)
@@ -465,13 +466,16 @@ if __name__ == "__main__":
         with st.spinner("Searching..."):
             info_list = search(query)
         st.session_state["info_list"] = info_list
+    else:
+        info = st.session_state.get("current_video", None)
+        if info:
+            render_existing_video(info)
     
     info = st.session_state.get("current_video", None)
     # show video if nor from channel or search
     if info and not channel_id and not query:
         file_name = info['id'] + "_" + re.sub(r"[^a-zA-Z0-9_]", "_", info["title"].lower().replace(" ", "_"))
         file_name = file_name[:64]
-        render_existing_video(info)
         col1, col2, col3, _ = st.columns([1,1,1,2])
         # download the json if it exists
         if os.path.exists(f"{DATA_FOLDER}/{info['id']}.json"):

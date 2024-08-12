@@ -1,5 +1,5 @@
 requests
-pytubefix
+pytubefix==6.9.2
 tiktoken
 streamlit
 groq

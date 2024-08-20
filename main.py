@@ -290,6 +290,8 @@ def download_video(video_url, pb):
     return file_path, srt_path
 
 def show_video(video: YouTube | None=None, video_id: str=None):
+    st.warning("Not supported due to YouTube API limitations")
+    return
     if video:
         video_id = video.video_id
     local_path = f"{DATA_FOLDER}/{video_id}.mp4"

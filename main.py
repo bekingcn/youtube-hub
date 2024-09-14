@@ -38,9 +38,17 @@ DEFAULT_MODEL_LIST = [m for m in st.secrets.get("GROQ_MODEL_LIST", "llama-3.1-8b
 DEFAULT_MODEL = "llama-3.1-8b-instant"
 DEFAULT_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
-def summarize_stream(video_texts: str | list, api_key: str, model: str = DEFAULT_MODEL):
-    from groq import Groq
+MODELS_CONFIG = st.secrets.get("MODELS", {})
+MODELS = {}
+default_model_config = {    
+    "provider": "GROQ",
+    "max_tokens": MAX_TOKENS_FOR_SUMMARY
+}
+for mn in DEFAULT_MODEL_LIST:
+    MODELS[mn] = {**default_model_config, **MODELS_CONFIG.get(mn, {})}
 
+def summarize_stream(video_texts: str | list, api_key: str, model: str, max_tokens: int):
+    from groq import Groq
     client = Groq(api_key=api_key)
     if isinstance(video_texts, list):
         video_texts = "\n".join(video_texts)
@@ -54,7 +62,7 @@ def summarize_stream(video_texts: str | list, api_key: str, model: str = DEFAULT
             }
         ],
         temperature=0.3,
-        max_tokens=MAX_TOKENS_FOR_SUMMARY,
+        max_tokens=max_tokens,
         top_p=1,
         stream=True,
         stop=None,
@@ -62,8 +70,8 @@ def summarize_stream(video_texts: str | list, api_key: str, model: str = DEFAULT
     for line in completion:
         yield line.choices[0].delta.content
 
-def summarize(video_texts: str | list, api_key: str, model: str = DEFAULT_MODEL) -> str:
-    return " ".join(summarize_stream(video_texts, api_key, model=model))
+def summarize(video_texts: str | list, api_key: str, model: str, max_tokens: int) -> str:
+    return " ".join(summarize_stream(video_texts, api_key, model=model, max_tokens=max_tokens))
 
 def translate_stream(text: str | list[str]):
     # refresh token
@@ -393,12 +401,13 @@ def render_subtitle(video_url, lang):
     # Summary
     with col2.container(height=300):
         with st.spinner("Summarizing..."):
-            # calculate summary with the maximum of MAX_TOKENS_FOR_SUMMARY tokens
-            sub_text, total = split_large_text(sub_text, MAX_TOKENS_FOR_SUMMARY)
+            # calculate summary with the maximum of max_tokens
+            max_tokens = MODELS[model]["max_tokens"]
+            sub_text, total = split_large_text(sub_text, max_tokens)
             if api_key:
                 chunks = []
                 def _stream():
-                    for t in summarize_stream(sub_text, api_key, model=model):
+                    for t in summarize_stream(sub_text, api_key, model=model, max_tokens=max_tokens):
                         if t:
                             chunks.append(t)
                             yield t
@@ -407,8 +416,8 @@ def render_subtitle(video_url, lang):
             else:
                 summary = "Please provide an API key to get summary."
                 st.markdown(summary)
-            if total > MAX_TOKENS_FOR_SUMMARY:
-                st.warning(f"Subtitle too long ({total} tokens). Only the first {MAX_TOKENS_FOR_SUMMARY} tokens will be used for summary.")
+            if total > max_tokens:
+                st.warning(f"Subtitle too long ({total} tokens). Only the first {max_tokens} tokens will be used for summary.")
 
     return info, srt, True
 
@@ -487,8 +496,3 @@ if __name__ == "__main__":
         if os.path.exists(f"{DATA_FOLDER}/{info['id']}.mp4"):
             col3.download_button("Download Video", data=open(f"{DATA_FOLDER}/{info['id']}.mp4", "rb").read(), file_name=f"{file_name}.mp4")
     render_video_info_list(info_list)
-
-
-
-
-
